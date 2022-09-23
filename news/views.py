@@ -6,6 +6,7 @@ from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet
 from rest_framework.generics import ListCreateAPIView, RetrieveUpdateDestroyAPIView, get_object_or_404
 from rest_framework.authentication import SessionAuthentication, TokenAuthentication
+from rest_framework.permissions import IsAuthenticated, IsAdminUser
 
 
 from .models import *
@@ -20,11 +21,10 @@ class NewsViewSet(ModelViewSet):
     permission_classes = [IsAuthorPermission, ]
 
     def perform_create(self, serializer):
-        serializer.save(author=self.request.author)
+        serializer.save(author=self.request.user.author)
 
     def get_queryset(self):
         queryset = self.queryset
-        print(self.request.query_params)
         author = self.request.query_params.get("author")
         if author:
             queryset = queryset.filter(author__user__username=author)
@@ -45,7 +45,7 @@ class CommentListCreateAPIView(ListCreateAPIView):
         return self.queryset.filter(news_id=self.kwargs['news_id'])
 
     def perform_create(self, serializer):
-        serializer.save(user=self.request.user,
+        serializer.save(author=self.request.user.author,
                         news=get_object_or_404(News, id=self.kwargs['news_id']))
 
 
@@ -56,39 +56,48 @@ class CommentRetrieveDestroyAPIView(RetrieveUpdateDestroyAPIView):
     permission_classes = [IsAuthorPermission, ]
 
 
-class NewsLikeView(APIView):
-    def get(self, request, news_id):
+class NewsPostStatus(APIView):
+    model = NewsStatus
+    permission_classes = (IsAuthenticated,)
+    authentication_classes = (TokenAuthentication, SessionAuthentication)
+
+    def get(self, request, news_id, slug):
         news = get_object_or_404(News, id=news_id)
+        status = get_object_or_404(Status, slug=slug)
         try:
-            like = NewsLikeView.objects.create(news=news, author=request.author)
+            self.model.objects.create(
+                news=news,
+                author=request.user.author,
+                status=status
+            )
         except IntegrityError:
-            like = NewsLikeView.objects.filter(news=news, author=request.author).delete()
-            data = {f"Лайк для {news_id} твита убрал пользователь {request.author.user.username}"}
-            return Response(data, status=status.HTTP_403_FORBIDDEN)
+            return Response({'error': 'You already added status'})
         else:
-            if DislikeNews.objects.filter(news=news, author=request.author):
-                dislike = DislikeNews.objects.get(news=news, author=request.author).delete()
-                data = {f"Был убран дизлайк с твита {news_id} и вместо неё поставлен лайк пользователем"
-                        f" {request.author.user.username}"}
-                return Response(data, status=status.HTTP_201_CREATED)
-            data = {'message': f"лайк твиту {news_id} поставил пользователь {request.author.user.username}"}
-            return Response(data, status=status.HTTP_201_CREATED)
+            return Response({'message': 'Status added'})
 
 
-class NewsDislikeView(APIView):
-    def get(self, request, news_id):
-        news = get_object_or_404(News, id=news_id)
+class CommentPostStatus(APIView):
+    model = CommentStatus
+    permission_classes = (IsAuthenticated,)
+    authentication_classes = (TokenAuthentication, SessionAuthentication)
+
+    def get(self, request, news_id, comment_id, slug):
+        comment = get_object_or_404(Comment, id=comment_id, news__id=news_id)
+        status = get_object_or_404(Status, slug=slug)
         try:
-            like = NewsDislikeView.objects.create(news=news, user=request.author)
+            self.model.objects.create(
+                comment=comment,
+                author=request.user.author,
+                status=status
+            )
         except IntegrityError:
-            like = NewsDislikeView.objects.filter(news=news, user=request.author).delete()
-            data = {'Errors': f"дизлайк {news_id} был убран пользователем {request.author.user.username}"}
-            return Response(data, status=status.HTTP_403_FORBIDDEN)
+            return Response({'error': 'You already added status'})
         else:
-            if DislikeNews.objects.filter(news=news, user=request.author):
-                like = DislikeNews.objects.get(news=news, user=request.author).delete()
-                data = {f"Был убран лайк с новости {news_id} и вместо неё поставлен дизлайк пользователем"
-                        f" {request.author.user.username}"}
-                return Response(data, status=status.HTTP_201_CREATED)
-            data = {f"дизлайк для новости {news_id} поставил пользователь {request.author.user.username}"}
-            return Response(data, status=status.HTTP_201_CREATED)
+            return Response({'message': 'Status added'})
+
+
+class StatusViewSet(ModelViewSet):
+    queryset = Status.objects.all()
+    serializer_class = StatusSerializer
+    authentication_classes = [SessionAuthentication, TokenAuthentication]
+    permission_classes = [IsAdminUser, ]

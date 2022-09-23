@@ -32,6 +32,8 @@ class News(models.Model):
         for i in statuses:
             result[i['status__name']] = i['count']
 
+        return result
+
 
 class Comment(models.Model):
     text = models.CharField(max_length=255)
