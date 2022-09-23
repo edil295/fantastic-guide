@@ -7,6 +7,6 @@ from . import views
 
 urlpatterns = [
     path('account/register/', views.RegisterView.as_view()),
-    path('token/', obtain_auth_token),
+    path('account/token/', obtain_auth_token),
     path('', include('rest_framework.urls')),
 ]
